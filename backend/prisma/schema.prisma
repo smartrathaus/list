@@ -1,0 +1,87 @@
+// This is your Prisma schema file.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String      @id @default(cuid())
+  email     String      @unique
+  username  String      @unique
+  password  String
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  lists     List[]
+  items     Item[]
+  listAccess ListAccess[]
+
+  @@map("users")
+}
+
+model List {
+  id        String      @id @default(cuid())
+  title     String
+  color     String      @default("blue")
+  icon      String      @default("list")
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  creatorId String
+  creator   User        @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  items     Item[]
+  categories Category[]
+  accesses  ListAccess[]
+
+  @@map("lists")
+}
+
+model ListAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  listId    String
+  role      String   @default("viewer")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  list List @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, listId])
+  @@map("list_access")
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String
+  color     String   @default("#64748b")
+  createdAt DateTime @default(now())
+  listId    String
+  list      List     @relation(fields: [listId], references: [id], onDelete: Cascade)
+  items     Item[]
+
+  @@map("categories")
+}
+
+model Item {
+  id          String    @id @default(cuid())
+  title       String
+  completed   Boolean   @default(false)
+  quantity    Int       @default(1)
+  unit        String    @default("")
+  notes       String    @default("")
+  priority    Int       @default(0)
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  listId      String
+  list        List      @relation(fields: [listId], references: [id], onDelete: Cascade)
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  creatorId   String
+  creator     User      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+
+  @@map("items")
+}
