@@ -1,0 +1,71 @@
+import express, { Response } from 'express';
+import { prisma } from '../index.js';
+import { authMiddleware, AuthRequest } from '../middleware/auth.js';
+
+const router = express.Router();
+
+router.get('/:listId', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const list = await prisma.list.findUnique({
+      where: { id: req.params.listId },
+      include: { categories: true }
+    });
+
+    if (!list) {
+      return res.status(404).json({ error: 'Liste nicht gefunden.' });
+    }
+
+    const hasAccess = list.creatorId === req.user!.id || (await prisma.listAccess.findFirst({
+      where: { listId: list.id, userId: req.user!.id }
+    }));
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Keine Berechtigung.' });
+    }
+
+    return res.json(list.categories);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Kategorien konnten nicht geladen werden.' });
+  }
+});
+
+router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
+  const { listId, name, color = '#5b7cff' } = req.body;
+
+  if (!listId || !name) {
+    return res.status(400).json({ error: 'listId und name sind erforderlich.' });
+  }
+
+  try {
+    const list = await prisma.list.findUnique({
+      where: { id: listId },
+      include: { accesses: true }
+    });
+
+    if (!list) {
+      return res.status(404).json({ error: 'Liste nicht gefunden.' });
+    }
+
+    const hasAccess = list.creatorId === req.user!.id || list.accesses.some((access) => access.userId === req.user!.id);
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Keine Berechtigung.' });
+    }
+
+    const category = await prisma.category.create({
+      data: {
+        listId,
+        name,
+        color,
+      }
+    });
+
+    return res.status(201).json(category);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Kategorie konnte nicht erstellt werden.' });
+  }
+});
+
+export default router;

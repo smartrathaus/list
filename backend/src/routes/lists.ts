@@ -23,7 +23,8 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
             creator: { select: { id: true, username: true } }
           },
           orderBy: [{ completed: 'asc' }, { priority: 'desc' }, { createdAt: 'asc' }]
-        }
+        },
+        categories: true
       },
       orderBy: { updatedAt: 'desc' }
     });
