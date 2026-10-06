@@ -3,8 +3,13 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
 import { prisma } from '../index.js';
+import { getJwtSecret } from '../middleware/auth.js';
 
 const router = express.Router();
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const isStrongPassword = (password: string) => password.length >= 8;
 
 router.post('/register', async (req: Request, res: Response) => {
   const { email, username, password } = req.body;
@@ -13,10 +18,22 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Email, Benutzername und Passwort sind erforderlich.' });
   }
 
+  if (!emailPattern.test(String(email))) {
+    return res.status(400).json({ error: 'Bitte gib eine gültige E-Mail-Adresse ein.' });
+  }
+
+  if (String(username).trim().length < 3) {
+    return res.status(400).json({ error: 'Der Benutzername muss mindestens 3 Zeichen lang sein.' });
+  }
+
+  if (!isStrongPassword(String(password))) {
+    return res.status(400).json({ error: 'Das Passwort muss mindestens 8 Zeichen lang sein.' });
+  }
+
   try {
     const existing = await prisma.user.findFirst({
       where: {
-        OR: [{ email }, { username }]
+        OR: [{ email: String(email) }, { username: String(username) }]
       }
     });
 
@@ -24,19 +41,19 @@ router.post('/register', async (req: Request, res: Response) => {
       return res.status(409).json({ error: 'Benutzername oder E-Mail bereits vergeben.' });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(String(password), 10);
 
     const user = await prisma.user.create({
       data: {
-        email,
-        username,
+        email: String(email).toLowerCase(),
+        username: String(username).trim(),
         password: hashedPassword
       }
     });
 
     const token = jwt.sign(
       { id: user.id, email: user.email, username: user.username },
-      process.env.JWT_SECRET || 'secret',
+      getJwtSecret(),
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
 
@@ -63,14 +80,14 @@ router.post('/login', async (req: Request, res: Response) => {
 
   try {
     const user = await prisma.user.findUnique({
-      where: { email }
+      where: { email: String(email).toLowerCase() }
     });
 
     if (!user) {
       return res.status(401).json({ error: 'Falsche E-Mail oder Passwort.' });
     }
 
-    const valid = await bcrypt.compare(password, user.password);
+    const valid = await bcrypt.compare(String(password), user.password);
 
     if (!valid) {
       return res.status(401).json({ error: 'Falsche E-Mail oder Passwort.' });
@@ -78,7 +95,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { id: user.id, email: user.email, username: user.username },
-      process.env.JWT_SECRET || 'secret',
+      getJwtSecret(),
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
 
@@ -106,7 +123,7 @@ router.get('/me', async (req: Request, res: Response) => {
   const token = authHeader.split(' ')[1];
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
+    const decoded = jwt.verify(token, getJwtSecret()) as { id: string };
     const user = await prisma.user.findUnique({
       where: { id: decoded.id }
     });

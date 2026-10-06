@@ -1,6 +1,6 @@
 import express, { Response } from 'express';
 import { prisma } from '../index.js';
-import { authMiddleware, AuthRequest } from '../middleware/auth.js';
+import { authMiddleware, AuthRequest, getJwtSecret } from '../middleware/auth.js';
 import { io } from '../index.js';
 
 const router = express.Router();
@@ -29,13 +29,11 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
       orderBy: { updatedAt: 'desc' }
     });
 
-    const result = lists.map((list) => ({
+    return res.json(lists.map((list) => ({
       ...list,
       itemCount: list.items.length,
       completedCount: list.items.filter((item) => item.completed).length
-    }));
-
-    return res.json(result);
+    })));
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: 'Listen konnten nicht geladen werden.' });
@@ -45,16 +43,16 @@ router.get('/', authMiddleware, async (req: AuthRequest, res: Response) => {
 router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   const { title, color = 'blue', icon = 'list' } = req.body;
 
-  if (!title) {
-    return res.status(400).json({ error: 'Titel ist erforderlich.' });
+  if (!title || typeof title !== 'string' || title.trim().length < 2) {
+    return res.status(400).json({ error: 'Titel ist erforderlich und muss mindestens 2 Zeichen lang sein.' });
   }
 
   try {
     const list = await prisma.list.create({
       data: {
-        title,
-        color,
-        icon,
+        title: title.trim(),
+        color: String(color),
+        icon: String(icon),
         creatorId: req.user!.id
       },
       include: {
@@ -123,9 +121,9 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
     const updated = await prisma.list.update({
       where: { id: req.params.id },
       data: {
-        ...(title && { title }),
-        ...(color && { color }),
-        ...(icon && { icon })
+        ...(typeof title === 'string' && title.trim().length >= 2 && { title: title.trim() }),
+        ...(typeof color === 'string' && { color }),
+        ...(typeof icon === 'string' && { icon })
       },
       include: {
         creator: { select: { id: true, username: true } }
@@ -178,7 +176,7 @@ router.post('/:id/share', authMiddleware, async (req: AuthRequest, res: Response
       return res.status(403).json({ error: 'Nur der Ersteller kann freigeben.' });
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email: String(email).toLowerCase() } });
 
     if (!user) {
       return res.status(404).json({ error: 'Benutzer nicht gefunden.' });

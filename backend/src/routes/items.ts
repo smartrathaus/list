@@ -8,8 +8,12 @@ const router = express.Router();
 router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
   const { listId, title, quantity = 1, unit = '', categoryId, priority = 0, dueDate, notes = '' } = req.body;
 
-  if (!listId || !title) {
-    return res.status(400).json({ error: 'listId und title sind erforderlich.' });
+  if (!listId || !title || typeof title !== 'string' || title.trim().length < 2) {
+    return res.status(400).json({ error: 'listId und ein gültiger Titel sind erforderlich.' });
+  }
+
+  if (Number(quantity) < 1) {
+    return res.status(400).json({ error: 'Menge muss mindestens 1 sein.' });
   }
 
   try {
@@ -30,11 +34,11 @@ router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
 
     const item = await prisma.item.create({
       data: {
-        title,
-        quantity,
-        unit,
-        notes,
-        priority,
+        title: title.trim(),
+        quantity: Number(quantity),
+        unit: String(unit),
+        notes: String(notes),
+        priority: Number(priority),
         dueDate: dueDate ? new Date(dueDate) : null,
         listId,
         categoryId: categoryId || null,
@@ -82,12 +86,12 @@ router.put('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
     const updated = await prisma.item.update({
       where: { id: req.params.id },
       data: {
-        ...(title !== undefined && { title }),
-        ...(completed !== undefined && { completed }),
-        ...(quantity !== undefined && { quantity }),
-        ...(unit !== undefined && { unit }),
-        ...(notes !== undefined && { notes }),
-        ...(priority !== undefined && { priority }),
+        ...(typeof title === 'string' && title.trim().length > 0 && { title: title.trim() }),
+        ...(typeof completed === 'boolean' && { completed }),
+        ...(typeof quantity === 'number' && quantity >= 1 && { quantity }),
+        ...(typeof unit === 'string' && { unit: unit.trim() }),
+        ...(typeof notes === 'string' && { notes }),
+        ...(typeof priority === 'number' && { priority }),
         ...(dueDate !== undefined && { dueDate: dueDate ? new Date(dueDate) : null }),
         ...(categoryId !== undefined && { categoryId: categoryId || null })
       },

@@ -1,33 +1,69 @@
-{
-  "name": "list-backend",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
-  },
-  "dependencies": {
-    "@prisma/client": "^5.10.0",
-    "bcryptjs": "^2.4.3",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.1",
-    "jsonwebtoken": "^9.0.2",
-    "prisma": "^5.10.0",
-    "socket.io": "^4.8.1"
-  },
-  "devDependencies": {
-    "@types/bcryptjs": "^2.4.1",
-    "@types/cors": "^2.8.5",
-    "@types/express": "^5.0.0",
-    "@types/jsonwebtoken": "^9.0.5",
-    "@types/node": "^22.10.1",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+import express, { Response } from 'express';
+import { prisma } from '../index.js';
+import { authMiddleware, AuthRequest } from '../middleware/auth.js';
+
+const router = express.Router();
+
+router.get('/:listId', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const list = await prisma.list.findUnique({
+      where: { id: req.params.listId },
+      include: { categories: true, accesses: true }
+    });
+
+    if (!list) {
+      return res.status(404).json({ error: 'Liste nicht gefunden.' });
+    }
+
+    const hasAccess = list.creatorId === req.user!.id || list.accesses.some((access) => access.userId === req.user!.id);
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Keine Berechtigung.' });
+    }
+
+    return res.json(list.categories);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Kategorien konnten nicht geladen werden.' });
   }
-}
+});
+
+router.post('/', authMiddleware, async (req: AuthRequest, res: Response) => {
+  const { listId, name, color = '#5b7cff' } = req.body;
+
+  if (!listId || !name || typeof name !== 'string' || name.trim().length < 2) {
+    return res.status(400).json({ error: 'listId und ein gültiger Kategorienname sind erforderlich.' });
+  }
+
+  try {
+    const list = await prisma.list.findUnique({
+      where: { id: listId },
+      include: { accesses: true }
+    });
+
+    if (!list) {
+      return res.status(404).json({ error: 'Liste nicht gefunden.' });
+    }
+
+    const hasAccess = list.creatorId === req.user!.id || list.accesses.some((access) => access.userId === req.user!.id);
+
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Keine Berechtigung.' });
+    }
+
+    const category = await prisma.category.create({
+      data: {
+        listId,
+        name: name.trim(),
+        color: String(color),
+      }
+    });
+
+    return res.status(201).json(category);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Kategorie konnte nicht erstellt werden.' });
+  }
+});
+
+export default router;
